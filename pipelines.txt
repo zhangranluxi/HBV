@@ -1,0 +1,21 @@
+##assemble the paired-end QC-fileter reads
+flash -q -c -M 200 -x 0.15 ZR7-8_R2.fastq ZR7-8_R1.fastq > ZR7-8_raw_merge.fastq
+wc ZR7-8_R1.fastq | awk -v tmp='ZR7-8' '{print tmp"	"$1/4}' >> Raw_Nums.txt
+cutadapt -a ATTAGAWACCCVNGTAGTCC ZR7-8_raw_merge.fastq --quiet -o ZR7-8_clean_merge_tmp.fastq
+cutadapt -g CCTACGGGNBGCASCAG ZR7-8_clean_merge_tmp.fastq --max-n 2 -m 400 -o ZR7-8_clean_merge.fastq
+wc ZR7-8_clean_merge.fastq | awk -v tmp='ZR7-8' '{print tmp"\t"$1/4}' >> Clean_Nums.txt
+
+##add sample name to the sequence ID, and cat all sequences into one file
+awk -v tmp="ZR7-8" 'BEGIN{n=1;j=0}{if(n%4==1){j++;print ">"tmp"."j";barcodelabel="tmp}else{if(n%4==2){print $0}};n++}' 
+ZR7-8_clean_merge.fastq >> usearch_input_merge.fa
+
+##USEARCH to make OTU table
+usearch10 -fastx_uniques usearch_input_merge.fa --fastaout derep_mix_clean.fa --sizeout
+usearch10 -sortbysize derep_mix_clean.fa -fastaout derep_mix_clean.sorted.fa -minsize 2
+usearch10 -cluster_otus derep_mix_clean.sorted.fa -otus otus1.fa -relabel OTU_ -uparseout results.txt
+usearch8 -uchime_ref otus1.fa -db ~/gold.fa -strand plus -nonchimeras otus.fa
+usearch10 -usearch_global usearch_input_merge.fa -db otus.fa -strand plus -id 0.97 -uc reads_map.uc
+python ~/software/16s/usearch/python_scripts/uc2otutab.py reads_map.uc > otus_table.txt
+
+##otu tax annotation
+assign_taxonomy.py -i otus.fa -t 97_otu_taxonomy.txt -r silva_132_97_16S.fna -o otus_assign
